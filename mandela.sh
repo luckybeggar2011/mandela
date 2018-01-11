@@ -30,6 +30,9 @@
 #  kill $jawsp 
 #  wait $jawsp 2>/dev/null
 #  ---------------------------------------------------------------------------------
+
+trap 'reset; exit' INT EXIT
+
 jaws() {
 i=0
 char=">"
@@ -119,7 +122,7 @@ chk_root
 #  ---------------------------------------------------------------------------------
 
 VERCHECK=`lsb_release -d`
-if [ "$VERCHECK" != "Description:	Ubuntu 16.04 LTS" ]; then
+if [[ "$VERCHECK" != *"Ubuntu 16"* ]]; then
   tput sgr0;tput clear;tput setaf $TITLECOL;tput cup 3 5;tput smul
   echo "UBUNTU $ver - THE DIZWELL ORACLE PREINSTALLER";tput rmul;tput cup 5 5;tput rev
   echo " W R O N G   D I S T R O   D E T E C T E D ! ";tput sgr0;tput cup 7 5;tput setaf $WARNCOL;tput bold
@@ -161,31 +164,46 @@ else
   exit 0  
 fi
 
-#  ---------------------------------------------------------------------------------
-#  Next, we need to know which Oracle version is to be installed. There
-#  are only two choices these days...
+#  --------------------------------------------------------------------------------- 
+#  Next, we need to know which Oracle version is to be installed. There 
+#  are only two choices these days... 
 #  ---------------------------------------------------------------------------------
 tput sgr0;tput clear;tput setaf 2;tput cup 3 5;tput smul
 echo "UBUNTU $ver - THE DIZWELL ORACLE PREINSTALLER";tput rmul;tput cup 5 5;tput rev
 echo " C H O O S E   O R A C L E   V E R S I O N ";tput sgr0;tput cup 7 5;tput setaf $TEXTCOL
 echo "1. Oracle 12c Release 1";tput cup 9 5
-echo "2. Quit";tput bold
+echo "2. Oracle 12c Release 2";tput cup 11 5
+echo "0. Quit";tput bold
 while [ "$VERGOOD" != 1 ]; do
   tput cup 17 5
   tput rev
-  read -p "Enter your choice [1-2]: " oraver
+  read -p "Enter your choice [1-2,0]: " oraver
   case $oraver in
     1 ) ORAPATH="12.1.0"; 
         ORACHOICE="12c";
 	VERGOOD=1;;
-    2 ) tput sgr0;
+    2 ) ORAPATH="12.2.0";
+        ORACHOICE="12c";
+        VERGOOD=1;;
+    0 ) tput sgr0;
         clear
 	exit 1;;
     * ) tput cup 17 5;
 	VERGOOD=0;
-        echo "Please enter 1 or 2 only.";;
+        echo "Please enter 1 or 2 or 0 only.";;
   esac
 done;
+
+#  ---------------------------------------------------------------------------------
+#  Next, we need to know where are we going to install ORACLE 
+#  ---------------------------------------------------------------------------------
+tput sgr0;tput clear;tput setaf 2;tput cup 3 5;tput smul
+echo "UBUNTU $ver - THE DIZWELL ORACLE PREINSTALLER";tput rmul;tput cup 5 5;tput rev
+echo " C H O O S E   O R A C L E   H O M E ";tput sgr0;tput cup 7 5;tput setaf $TEXTCOL
+RESP_DEF="/u01/app/oracle/product/$ORAPATH/db_1"
+read -p "Please provide where are you going to install oracle software [$RESP_DEF]: " RESP
+RESP=${RESP:-$RESP_DEF}
+ORACLE_HOME_SPECIFIED=$RESP
 
 #  ---------------------------------------------------------------------------------
 # The IP address of the machine needs to be recorded in the /etc/hosts
@@ -714,7 +732,7 @@ cat >> $ENVFILE << EOF
 #Added for fresh Oracle $ORACHOICE Installation
 export ORACLE_HOSTNAME=$HSTNM
 export ORACLE_BASE=/u01/app/oracle
-export ORACLE_HOME=/u01/app/oracle/product/$ORAPATH/db_1
+export ORACLE_HOME=$ORACLE_HOME_SPECIFIED
 export ORACLE_SID=$DBNAME
 export ORACLE_UNQNAME=$DBNAME
 export PATH=\$ORACLE_HOME/bin:\$PATH:.
@@ -749,7 +767,7 @@ cat >> /etc/init.d/dboraz << EOF
 # Short-Description: Startup script for Oracle Databases
 # Description:       Oracle Database Auto-Start Script
 ### END INIT INFO
-export ORACLE_HOME=/u01/app/oracle/product/$ORAPATH/db_1
+export ORACLE_HOME=$ORACLE_HOME_SPECIFIED
 export ORACLE_SID=$DBNAME
 export PATH=\$ORACLE_HOME/bin:\$PATH:.
 
@@ -871,12 +889,12 @@ if [ "$RESP" = "y" ]; then
 #  compiler switches to the various makefiles that will fix the problems, 
 #  once a 'Retry' has been selected. 
 #  ---------------------------------------------------------------------------------
-mkdir -p /home/$ORACLEUSER/Documents/
-cat >> /home/$ORACLEUSER/Documents/ubuntu-fixup.sh << EOF
+mkdir -p /home/$ORACLEUSER/
+cat > /home/$ORACLEUSER/ubuntu-fixup.sh << EOF
 #!/bin/bash
-export ORACLE_HOME=/u01/app/oracle/product/$ORAPATH/db_1
+export ORACLE_HOME=$ORACLE_HOME_SPECIFIED
 
-sudo ln -s \$ORACLE_HOME/lib/libclntsh.core.so.12.1 /usr/lib
+sudo ln -s \$ORACLE_HOME/lib/libclntshcore.so.12.1 /usr/lib
 sudo ln -s \$ORACLE_HOME/lib/libclntsh.so.12.1 /usr/lib
 
 cp \$ORACLE_HOME/rdbms/lib/ins_rdbms.mk \$ORACLE_HOME/rdbms/lib/ins_rdbms.bkp
@@ -898,10 +916,41 @@ sed -i 's/^\(ORACLE_LINKLINE.*\$(ORACLE_LINKER)\) \($(PL_FLAGS)\)/\1 -Wl,--no-as
 sed -i 's/\$LD \$LD_RUNTIME/$LD -Wl,--no-as-needed \$LD_RUNTIME/' \$ORACLE_HOME/bin/genorasdksh
 sed -i 's/\$(GETCRSHOME_OBJ1) \$(OCRLIBS_DEFAULT)/\$(GETCRSHOME_OBJ1) -Wl,--no-as-needed \$(OCRLIBS_DEFAULT)/' \$ORACLE_HOME/srvm/lib/env_srvm.mk
 
+EOF
+
+if [ x"$oraver" == x"2" ]; then
+  cat >> /home/$ORACLEUSER/ubuntu-fixup.sh << EOF
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/rdbms/lib/env_rdbms.mk
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/crs/lib/env_has.mk;
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/odbc/lib/env_odbc.mk;
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/precomp/lib/env_precomp.mk;
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/srvm/lib/env_srvm.mk;
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/network/lib/env_network.mk;
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/ldap/lib/env_ldap.mk;
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/ord/im/lib/env_ordim.mk;
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/plsql/lib/env_plsql.mk;
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/ctx/lib/env_ctx.mk;
+sed -i 's/LDDISABLENEWDTAGS=-Wl,--disable-new-dtags/LDDISABLENEWDTAGS=-Wl,--no-as-needed,--disable-new-dtags/' \$ORACLE_HOME/sqlplus/lib/env_sqlplus.mk;
+EOF
+fi
+
+cat >> /home/$ORACLEUSER/ubuntu-fixup.sh << EOF
+
 zenity --info --title "Fix-up Script Applied" --text="Click OK to return to the Oracle Installer, \nthen click the [Retry] option."
 
 exit 0
 EOF
+
+tput clear;tput sgr0;tput setaf 2;tput cup 3 5;tput smul
+echo "UBUNTU $ver - THE DIZWELL ORACLE PREINSTALLER";tput rmul;tput cup 5 5;tput rev
+echo "The file /home/$ORACLEUSER/ubuntu-fixup.sh was created. ";tput sgr0;tput cup 7 5;tput setaf $TEXTCOL
+echo "It contains required fixes to be applied by its executing";tput cup 8 5
+echo "after Oracle software will be installed after the first error occures.";tput cup 9 5
+echo "Errors can be ignored, but '${ORACLE_HOME_SPECIFIED}/bin/relink all' must be run and errors checked.";tput cup 10 5
+echo "It should be run as $ORACLEUSER. Please enjoy.";tput cup 11 5
+
+RESP_DEF=""
+read -p "Please press any key [$RESP_DEF]: " RESP
 
 chmod 775 /home/$ORACLEUSER/Documents/ubuntu-fixup.sh
 fi
@@ -910,9 +959,15 @@ tput clear;tput sgr0;tput setaf 2;tput cup 3 5;tput smul
 echo "UBUNTU $ver - THE DIZWELL ORACLE PREINSTALLER";tput rmul;tput cup 5 5;tput rev
 echo " R E B O O T   R E Q U I R E D ";tput sgr0;tput cup 7 5;tput setaf $TEXTCOL
 echo "To ensure the configuration changes made by this script take full";tput cup 8 5 
-echo "effect, this PC will be rebooted as soon as you press Enter.";tput cup 10 5 
+echo "effect, this PC need to be rebooted.";tput cup 10 5 
 echo "When your PC comes back up, log on as '$ORACLEUSER' and launch the";tput cup 11 5 
 echo "runInstaller.sh script from the Oracle software source of your choice.";tput cup 17 5;tput setaf 1;tput bold;tput rev
-read -p "Press Enter to reboot..." RESP
-reboot
+
+RESP_DEF="n"
+read -p "Would you like to reboot this PS now? (n/y) [$RESP_DEF]: " RESP
+RESP=${RESP:-$RESP_DEF}
+if [ x"$RESP" == x"y" ]; then
+  reboot
+fi;
+reset
 exit 0
